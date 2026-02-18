@@ -1,6 +1,6 @@
 {
   "name": "myinstants-mcp",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "type": "module",
   "description": "MCP server for myinstants.com — search and play millions of sound buttons",
   "bin": {

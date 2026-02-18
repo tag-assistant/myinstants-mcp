@@ -4,10 +4,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { spawn, exec, execSync } from "child_process";
-import { createWriteStream, unlinkSync } from "fs";
-import { join } from "path";
+import { createWriteStream, readFileSync, unlinkSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { platform as osPlatform, tmpdir } from "os";
 import { get } from "https";
+
+const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "package.json"), "utf8"));
+const UA = `myinstants-mcp/${pkg.version}`;
 
 const volume = Math.min(1, Math.max(0, parseFloat(process.env.MYINSTANTS_VOLUME || "0.5") || 0.5));
 const defaultWait = process.env.MYINSTANTS_WAIT === "true";
@@ -16,7 +20,7 @@ const BASE = "https://www.myinstants.com";
 
 function httpGet(url) {
   return new Promise((resolve, reject) => {
-    const follow = (u) => get(u, { headers: { "User-Agent": "myinstants-mcp/1.0" } }, res => {
+    const follow = (u) => get(u, { headers: { "User-Agent": UA } }, res => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) return follow(new URL(res.headers.location, u));
       let data = "";
       res.on("data", c => data += c);
@@ -72,7 +76,7 @@ function which(cmd) {
 
 function httpGetPartial(url, bytes = 4096) {
   return new Promise((resolve, reject) => {
-    const follow = (u) => get(u, { headers: { "User-Agent": "myinstants-mcp/1.0", "Range": `bytes=0-${bytes - 1}` } }, res => {
+    const follow = (u) => get(u, { headers: { "User-Agent": UA, "Range": `bytes=0-${bytes - 1}` } }, res => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) return follow(new URL(res.headers.location, u));
       const chunks = [];
       res.on("data", c => chunks.push(c));
@@ -121,7 +125,7 @@ async function getMp3Duration(url) {
 
 function downloadToFile(url, filePath) {
   return new Promise((resolve, reject) => {
-    const follow = (u) => get(u, { headers: { "User-Agent": "myinstants-mcp/1.0" } }, res => {
+    const follow = (u) => get(u, { headers: { "User-Agent": UA } }, res => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) return follow(new URL(res.headers.location, u));
       const stream = createWriteStream(filePath);
       res.pipe(stream);
@@ -218,7 +222,7 @@ async function drain() {
   playing = false;
 }
 
-const server = new McpServer({ name: "myinstants", version: "1.0.0" });
+const server = new McpServer({ name: "myinstants", version: pkg.version });
 
 server.resource("trending", "myinstants://trending", { description: "Trending sounds on MyInstants US", mimeType: "text/plain" }, async () => {
   const results = parseResults(await httpGet(`${BASE}/en/index/us/`));
@@ -321,8 +325,10 @@ server.tool(
     if (query) {
       const results = await search(query);
       if (!results.length) return { content: [{ type: "text", text: `No sounds found for "${query}"` }] };
-      soundUrl = results[0].url;
-      name = results[0].name;
+      const q = query.toLowerCase();
+      const best = results.find(r => r.name.toLowerCase() === q) || results[0];
+      soundUrl = best.url;
+      name = best.name;
     } else if (slug) {
       const html = await httpGet(`${BASE}/en/instant/${encodeURIComponent(slug)}/`);
       soundUrl = html.match(/<meta\s+(?:name|property)=["']og:audio["']\s+content=["']([^"']+)["']/)?.[1] || null;
