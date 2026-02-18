@@ -1,0 +1,34 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.austenstone/myinstants-mcp",
+  "description": "Give your AI agent a soundboard. Millions of meme sounds from myinstants.com.",
+  "version": "1.8.1",
+  "repository": {
+    "url": "https://github.com/austenstone/myinstants-mcp",
+    "source": "github",
+    "id": "1160511070"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "myinstants-mcp",
+      "version": "1.8.1",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MYINSTANTS_VOLUME",
+          "description": "Volume level from 0 to 1",
+          "default": "0.5"
+        },
+        {
+          "name": "MYINSTANTS_WAIT",
+          "description": "Whether to wait for sounds to finish playing before returning (true/false)",
+          "default": "true"
+        }
+      ]
+    }
+  ]
+}
