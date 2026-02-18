@@ -10,7 +10,7 @@
   "keywords": ["mcp", "sound", "myinstants", "soundboard", "ai", "agent", "model-context-protocol"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/tag-assistant/myinstants-mcp"
+    "url": "https://github.com/austenstone/myinstants-mcp"
   },
   "license": "MIT",
   "dependencies": {
