@@ -22,15 +22,14 @@ const BASE = "https://www.myinstants.com";
 const home = process.env.HOME || process.env.USERPROFILE || "";
 const cacheDir = process.env.MYINSTANTS_CACHE_DIR || join(home, ".cache", "myinstants");
 const cachePath = join(cacheDir, "cache.json");
-const SEARCH_TTL = 24 * 60 * 60 * 1000;
 const MAX_RECENT = 50;
 
 if (enableCache && !existsSync(cacheDir)) mkdirSync(cacheDir, { recursive: true });
 
 function loadCache() {
-  if (!enableCache) return { sounds: {}, searches: {}, recent: [], favorites: [] };
+  if (!enableCache) return { sounds: {}, recent: [], favorites: [] };
   try { return JSON.parse(readFileSync(cachePath, "utf-8")); }
-  catch { return { sounds: {}, searches: {}, recent: [], favorites: [] }; }
+  catch { return { sounds: {}, recent: [], favorites: [] }; }
 }
 
 function saveCache(cache) {
@@ -40,17 +39,6 @@ function saveCache(cache) {
 
 function cacheSound(cache, slug, name, url) {
   cache.sounds[slug] = { slug, name, url, cachedAt: Date.now() };
-}
-
-function cacheSearch(cache, query, results) {
-  cache.searches[query.toLowerCase()] = { results: results.map(r => r.slug), cachedAt: Date.now() };
-  for (const r of results) cacheSound(cache, r.slug, r.name, r.url);
-}
-
-function getCachedSearch(cache, query) {
-  const entry = cache.searches[query.toLowerCase()];
-  if (!entry || Date.now() - entry.cachedAt > SEARCH_TTL) return null;
-  return entry.results.map(slug => cache.sounds[slug]).filter(Boolean);
 }
 
 function addRecent(cache, slug) {
@@ -92,12 +80,12 @@ function parseResults(html) {
 }
 
 async function search(query) {
-  const cache = loadCache();
-  const cached = getCachedSearch(cache, query);
-  if (cached) return cached;
   const results = parseResults(await httpGet(`${BASE}/en/search/?name=${encodeURIComponent(query)}`));
-  cacheSearch(cache, query, results);
-  saveCache(cache);
+  if (enableCache && results.length) {
+    const cache = loadCache();
+    for (const r of results) cacheSound(cache, r.slug, r.name, r.url);
+    saveCache(cache);
+  }
   return results;
 }
 
