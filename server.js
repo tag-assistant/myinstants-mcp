@@ -11,6 +11,7 @@ import { get } from "https";
 
 const home = process.env.HOME || process.env.USERPROFILE || "";
 const volume = parseFloat(process.env.MYINSTANTS_VOLUME || "0.5") || 0.5;
+const defaultWait = process.env.MYINSTANTS_WAIT !== undefined ? process.env.MYINSTANTS_WAIT !== "false" : true;
 const BASE = "https://www.myinstants.com";
 
 function httpGet(url) {
@@ -197,7 +198,7 @@ server.tool(
     slug: z.string().optional().describe("Sound slug from search results"),
     url: z.string().optional().describe("Direct MP3 URL"),
     query: z.string().optional().describe("Quick search — plays first result"),
-    wait: z.boolean().optional().default(true).describe("Wait for sound to finish before returning (default: true). Set false for background playback."),
+    wait: z.boolean().optional().default(defaultWait).describe(`Wait for sound to finish before returning (default: ${defaultWait}). Set false for background playback.`),
   },
   async ({ slug, url, query, wait }) => {
     let soundUrl = url;

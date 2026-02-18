@@ -106,7 +106,7 @@ Add to your VS Code MCP config (User or `.vscode/mcp.json`):
 | `query` | string | — | quick search, plays first result. the goat option. |
 | `slug` | string | — | exact slug from search results |
 | `url` | string | — | direct MP3 URL if you're built different |
-| `wait` | boolean | `true` | `true` = blocks until done (dramatic effect 🎭). `false` = plays in background while agent keeps cooking |
+| `wait` | boolean | `MYINSTANTS_WAIT` or `true` | `true` = blocks until done (dramatic effect 🎭). `false` = plays in background while agent keeps cooking |
 
 ### 📚 Resources
 
@@ -155,6 +155,7 @@ check our [copilot-instructions.md](.github/copilot-instructions.md) for the ful
 | Variable | Default | The tea ☕ |
 |----------|---------|------|
 | `MYINSTANTS_VOLUME` | `0.5` | how loud (0-1). crank it bestie. |
+| `MYINSTANTS_WAIT` | `true` | `"false"` = sounds play in background by default. agent doesn't wait. maximum chaos. |
 
 ```json
 {
@@ -162,7 +163,10 @@ check our [copilot-instructions.md](.github/copilot-instructions.md) for the ful
     "myinstants": {
       "command": "npx",
       "args": ["-y", "myinstants-mcp@latest"],
-      "env": { "MYINSTANTS_VOLUME": "0.8" }
+      "env": {
+        "MYINSTANTS_VOLUME": "0.8",
+        "MYINSTANTS_WAIT": "false"
+      }
     }
   }
 }
