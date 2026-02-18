@@ -22,6 +22,13 @@ Only block on a sound when the **timing itself is the joke** or you want a drama
 
 If you're not sure, **don't wait.** Keep cooking. The sound will play while you work.
 
+### When to use `stop_sound`
+
+If you accidentally fire a sound that's too long, or you change your mind mid-rick-roll:
+- `stop_sound()` kills the current sound and clears the queue
+- Use it to interrupt long sounds or clear queued sounds
+- No parameters needed, just call it
+
 ## When to Play Sounds
 
 ### While Working

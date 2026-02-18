@@ -98,6 +98,7 @@ Add to your VS Code MCP config (User or `.vscode/mcp.json`):
 | `search_sounds` | search myinstants for sounds | `"bruh"` → 20 results with slugs |
 | `browse_category` | browse by category | `"memes"` `"games"` `"reactions"` |
 | `play_sound` | play a sound (by slug, url, or quick search) | `{ query: "sad trombone" }` plays instantly |
+| `stop_sound` | kill currently playing sound + clear queue | interrupts long sounds (rick rolls, etc.) |
 
 #### `play_sound` options
 
