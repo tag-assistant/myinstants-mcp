@@ -1,13 +1,23 @@
 {
   "name": "myinstants-mcp",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "type": "module",
   "description": "MCP server for myinstants.com — search and play millions of sound buttons",
   "bin": {
     "myinstants-mcp": "server.js"
   },
-  "files": ["server.js"],
-  "keywords": ["mcp", "sound", "myinstants", "soundboard", "ai", "agent", "model-context-protocol"],
+  "files": [
+    "server.js"
+  ],
+  "keywords": [
+    "mcp",
+    "sound",
+    "myinstants",
+    "soundboard",
+    "ai",
+    "agent",
+    "model-context-protocol"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/austenstone/myinstants-mcp"

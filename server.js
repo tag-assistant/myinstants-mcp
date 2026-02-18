@@ -3,14 +3,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { spawn, execSync } from "child_process";
-import { existsSync, mkdirSync, readFileSync, createWriteStream, unlinkSync } from "fs";
+import { spawn, exec, execSync } from "child_process";
+import { createWriteStream, unlinkSync } from "fs";
 import { join } from "path";
 import { platform as osPlatform, tmpdir } from "os";
 import { get } from "https";
 
-const home = process.env.HOME || process.env.USERPROFILE || "";
-const volume = parseFloat(process.env.MYINSTANTS_VOLUME || "0.5") || 0.5;
+const volume = Math.min(1, Math.max(0, parseFloat(process.env.MYINSTANTS_VOLUME || "0.5") || 0.5));
 const defaultWait = process.env.MYINSTANTS_WAIT !== undefined ? process.env.MYINSTANTS_WAIT !== "false" : true;
 const BASE = "https://www.myinstants.com";
 
@@ -54,41 +53,20 @@ async function category(name) {
   return parseResults(await httpGet(`${BASE}/en/categories/${encodeURIComponent(name)}/`));
 }
 
-async function recent() {
-  return parseResults(await httpGet(`${BASE}/en/recent/`));
-}
-
 async function bestOfAllTime() {
   return parseResults(await httpGet(`${BASE}/en/best_of_all_time/`));
 }
 
-function detectPlatform() {
-  const p = osPlatform();
-  if (p === "darwin") return "mac";
-  if (p === "win32") return "windows";
-  if (p === "linux") {
-    try { if (/microsoft/i.test(readFileSync("/proc/version", "utf-8"))) return "wsl"; } catch {}
-    return "linux";
-  }
-  return null;
-}
-
-function findStreamPlayers() {
-  const players = [];
-  if (osPlatform() === "darwin") {
-    try { execSync("command -v afplay", { stdio: "ignore" }); players.push("afplay"); } catch {}
-  }
-  for (const p of ["ffplay", "mpv"]) {
-    try { execSync(`command -v ${p}`, { stdio: "ignore" }); players.push(p); } catch {}
-  }
-  return players;
-}
-
-function getPlayerCommand(player, fileOrUrl) {
-  if (player === "afplay") return ["afplay", ["-v", String(volume), fileOrUrl]];
-  if (player === "ffplay") return ["ffplay", ["-nodisp", "-autoexit", "-volume", String(Math.round(volume * 100)), "-loglevel", "quiet", fileOrUrl]];
-  if (player === "mpv") return ["mpv", ["--no-video", `--volume=${Math.round(volume * 100)}`, fileOrUrl]];
-  return null;
+const whichCache = new Map();
+function which(cmd) {
+  if (whichCache.has(cmd)) return whichCache.get(cmd);
+  let found = false;
+  try {
+    execSync(osPlatform() === "win32" ? `where ${cmd}` : `command -v ${cmd}`, { stdio: "ignore" });
+    found = true;
+  } catch {}
+  whichCache.set(cmd, found);
+  return found;
 }
 
 function downloadToFile(url, filePath) {
@@ -104,36 +82,76 @@ function downloadToFile(url, filePath) {
   });
 }
 
-function spawnPlayer(cmd) {
+function spawnPlayer(cmd, args) {
   return new Promise(resolve => {
-    const child = spawn(cmd[0], cmd[1], { stdio: "ignore" });
+    const child = spawn(cmd, args, { stdio: "ignore", windowsHide: true });
     child.on("close", (code) => resolve(code === 0));
     child.on("error", () => resolve(false));
   });
 }
 
-async function streamPlay(url) {
-  const players = findStreamPlayers();
-  for (const player of players) {
-    if (player === "afplay") {
-      const tmp = join(tmpdir(), `myinstants-${Date.now()}.mp3`);
-      try {
-        await downloadToFile(url, tmp);
-        const ok = await spawnPlayer(getPlayerCommand("afplay", tmp));
-        try { unlinkSync(tmp); } catch {}
-        if (ok) return true;
-      } catch {
-        try { unlinkSync(tmp); } catch {}
-      }
-    } else {
-      const cmd = getPlayerCommand(player, url);
-      if (cmd) {
-        const ok = await spawnPlayer(cmd);
+async function playFile(filePath) {
+  const vol = Math.round(volume * 100);
+  const platform = osPlatform();
+
+  // ffplay: cross-platform, headless, supports volume
+  if (which("ffplay")) {
+    const ok = await spawnPlayer("ffplay", ["-nodisp", "-autoexit", "-volume", String(vol), "-loglevel", "quiet", filePath]);
+    if (ok) return true;
+  }
+  // mpv: cross-platform, headless
+  if (which("mpv")) {
+    const ok = await spawnPlayer("mpv", ["--no-video", `--volume=${vol}`, filePath]);
+    if (ok) return true;
+  }
+  // macOS: afplay is built-in
+  if (platform === "darwin") {
+    const ok = await spawnPlayer("afplay", ["-v", String(volume), filePath]);
+    if (ok) return true;
+  }
+  // Windows: PowerShell + WPF MediaPlayer (built-in, headless, supports MP3)
+  if (platform === "win32") {
+    const safePath = filePath.replace(/'/g, "''");
+    const cmd = `powershell -c "Add-Type -AssemblyName presentationCore; $p = New-Object system.windows.media.mediaplayer; $p.open('${safePath}'); $p.Volume = ${volume}; $p.Play(); Start-Sleep 1; Start-Sleep -s $p.NaturalDuration.TimeSpan.TotalSeconds; Exit;"`;
+    const ok = await new Promise(resolve => {
+      exec(cmd, { windowsHide: true }, (err) => resolve(!err));
+    });
+    if (ok) return true;
+  }
+  // Linux: paplay (PulseAudio) or aplay (ALSA) — WAV only, but worth trying
+  if (platform === "linux") {
+    for (const p of ["paplay", "aplay"]) {
+      if (which(p)) {
+        const ok = await spawnPlayer(p, [filePath]);
         if (ok) return true;
       }
     }
   }
   return false;
+}
+
+async function streamPlay(url) {
+  const vol = Math.round(volume * 100);
+  // ffplay and mpv can stream URLs directly (no download needed)
+  if (which("ffplay")) {
+    const ok = await spawnPlayer("ffplay", ["-nodisp", "-autoexit", "-volume", String(vol), "-loglevel", "quiet", url]);
+    if (ok) return true;
+  }
+  if (which("mpv")) {
+    const ok = await spawnPlayer("mpv", ["--no-video", `--volume=${vol}`, url]);
+    if (ok) return true;
+  }
+  // Everything else needs a local file
+  const tmp = join(tmpdir(), `myinstants-${Date.now()}.mp3`);
+  try {
+    await downloadToFile(url, tmp);
+    const ok = await playFile(tmp);
+    try { unlinkSync(tmp); } catch {}
+    return ok;
+  } catch {
+    try { unlinkSync(tmp); } catch {}
+    return false;
+  }
 }
 
 const queue = [];
@@ -193,7 +211,7 @@ server.tool(
 
 server.tool(
   "play_sound",
-  "Play a sound from myinstants.com. Streams directly — no download needed.",
+  "Play a sound from myinstants.com.",
   {
     slug: z.string().optional().describe("Sound slug from search results"),
     url: z.string().optional().describe("Direct MP3 URL"),
