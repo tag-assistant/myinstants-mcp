@@ -4,10 +4,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { spawn, exec, execSync } from "child_process";
-import { createWriteStream, readFileSync, unlinkSync } from "fs";
+import { createWriteStream, readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { platform as osPlatform, tmpdir } from "os";
+import { platform as osPlatform, tmpdir, homedir } from "os";
 import { get } from "https";
 
 const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "package.json"), "utf8"));
@@ -16,7 +16,50 @@ const UA = `myinstants-mcp/${pkg.version}`;
 const volume = Math.min(1, Math.max(0, parseFloat(process.env.MYINSTANTS_VOLUME || "0.5") || 0.5));
 const defaultWait = process.env.MYINSTANTS_WAIT === "true";
 const enableDetails = process.env.MYINSTANTS_DETAILS === "true";
+const enableCache = process.env.MYINSTANTS_CACHE !== "false";
 const BASE = "https://www.myinstants.com";
+
+const home = homedir();
+const cacheDir = process.env.MYINSTANTS_CACHE_DIR || join(home, ".cache", "myinstants");
+const cachePath = join(cacheDir, "cache.json");
+const MAX_RECENT = 50;
+
+if (enableCache && !existsSync(cacheDir)) mkdirSync(cacheDir, { recursive: true });
+
+const defaultCache = () => ({ sounds: {}, recent: [], favorites: [] });
+
+function loadCache() {
+  if (!enableCache) return defaultCache();
+  try {
+    const parsed = JSON.parse(readFileSync(cachePath, "utf-8"));
+    return {
+      sounds: (parsed.sounds && typeof parsed.sounds === "object") ? parsed.sounds : {},
+      recent: Array.isArray(parsed.recent) ? parsed.recent : [],
+      favorites: Array.isArray(parsed.favorites) ? parsed.favorites : [],
+    };
+  } catch { return defaultCache(); }
+}
+
+function saveCache(cache) {
+  if (!enableCache) return;
+  writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+}
+
+function cacheSound(cache, slug, name, url) {
+  cache.sounds[slug] = { slug, name, url, cachedAt: Date.now() };
+}
+
+function addRecent(cache, slug) {
+  cache.recent = [slug, ...cache.recent.filter(s => s !== slug)].slice(0, MAX_RECENT);
+}
+
+function toggleFavorite(cache, slug, remove) {
+  if (remove) {
+    cache.favorites = cache.favorites.filter(s => s !== slug);
+  } else if (!cache.favorites.includes(slug)) {
+    cache.favorites.unshift(slug);
+  }
+}
 
 function httpGet(url) {
   return new Promise((resolve, reject) => {
@@ -45,7 +88,13 @@ function parseResults(html) {
 }
 
 async function search(query) {
-  return parseResults(await httpGet(`${BASE}/en/search/?name=${encodeURIComponent(query)}`));
+  const results = parseResults(await httpGet(`${BASE}/en/search/?name=${encodeURIComponent(query)}`));
+  if (enableCache && results.length) {
+    const cache = loadCache();
+    for (const r of results) cacheSound(cache, r.slug, r.name, r.url);
+    saveCache(cache);
+  }
+  return results;
 }
 
 const CATEGORIES = [
@@ -240,6 +289,26 @@ server.resource("best", "myinstants://best", { description: "Best of all time so
   return { contents: [{ uri: "myinstants://best", text: results.map(r => `${r.slug}: "${r.name}" → ${r.url}`).join("\n") }] };
 });
 
+server.resource("recent", "myinstants://recent", { description: "Recently played sounds (local cache)", mimeType: "text/plain" }, () => {
+  const cache = loadCache();
+  if (!cache.recent.length) return { contents: [{ uri: "myinstants://recent", text: "No recently played sounds." }] };
+  const lines = cache.recent.map(slug => {
+    const s = cache.sounds[slug];
+    return s ? `${s.slug}: "${s.name}" → ${s.url}` : slug;
+  });
+  return { contents: [{ uri: "myinstants://recent", text: lines.join("\n") }] };
+});
+
+server.resource("favorites", "myinstants://favorites", { description: "Favorite/starred sounds (local cache)", mimeType: "text/plain" }, () => {
+  const cache = loadCache();
+  if (!cache.favorites.length) return { contents: [{ uri: "myinstants://favorites", text: "No favorite sounds yet. Use favorite_sound to add some." }] };
+  const lines = cache.favorites.map(slug => {
+    const s = cache.sounds[slug];
+    return s ? `${s.slug}: "${s.name}" → ${s.url}` : slug;
+  });
+  return { contents: [{ uri: "myinstants://favorites", text: lines.join("\n") }] };
+});
+
 server.tool(
   "search_sounds",
   "Search myinstants.com for sound buttons.",
@@ -260,6 +329,29 @@ server.tool(
     const results = await category(match);
     if (!results.length) return { content: [{ type: "text", text: `No sounds in category "${cat}"` }] };
     return { content: [{ type: "text", text: `**${match}:**\n` + results.slice(0, 20).map((r, i) => `${i + 1}. ${r.name} → \`${r.slug}\``).join("\n") }] };
+  }
+);
+
+server.tool(
+  "favorite_sound",
+  "Save or remove a sound from your favorites list.",
+  {
+    slug: z.string().describe("Sound slug to favorite"),
+    remove: z.boolean().optional().default(false).describe("Set true to remove from favorites"),
+  },
+  async ({ slug, remove }) => {
+    let cache = loadCache();
+    if (!cache.sounds[slug]) {
+      const results = await search(slug.replace(/-/g, " "));
+      const match = results.find(r => r.slug === slug);
+      if (!match) return { content: [{ type: "text", text: `Sound "${slug}" not found` }] };
+      cache = loadCache(); // reload after search may have updated cache
+    }
+    toggleFavorite(cache, slug, remove);
+    saveCache(cache);
+    const sound = cache.sounds[slug];
+    const name = sound?.name || slug;
+    return { content: [{ type: "text", text: remove ? `💔 Removed "${name}" from favorites` : `⭐ Added "${name}" to favorites` }] };
   }
 );
 
@@ -330,13 +422,30 @@ server.tool(
       soundUrl = best.url;
       name = best.name;
     } else if (slug) {
-      const html = await httpGet(`${BASE}/en/instant/${encodeURIComponent(slug)}/`);
-      soundUrl = html.match(/<meta\s+(?:name|property)=["']og:audio["']\s+content=["']([^"']+)["']/)?.[1] || null;
-      if (!soundUrl) return { content: [{ type: "text", text: `Sound "${slug}" not found` }] };
-      name = (html.match(/<meta\s+(?:name|property)=["']og:title["']\s+content=["']([^"']+)["']/)?.[1] || "").replace(/\s*-\s*Sound Button$/i, "") || slug.replace(/-\d+$/, "").replace(/-/g, " ");
+      // Check cache first
+      const cacheCheck = loadCache();
+      const cached = cacheCheck.sounds[slug];
+      if (cached?.url) {
+        soundUrl = cached.url;
+        name = cached.name;
+      } else {
+        const html = await httpGet(`${BASE}/en/instant/${encodeURIComponent(slug)}/`);
+        soundUrl = html.match(/<meta\s+(?:name|property)=["']og:audio["']\s+content=["']([^"']+)["']/)?.[1] || null;
+        if (!soundUrl) return { content: [{ type: "text", text: `Sound "${slug}" not found` }] };
+        name = (html.match(/<meta\s+(?:name|property)=["']og:title["']\s+content=["']([^"']+)["']/)?.[1] || "").replace(/\s*-\s*Sound Button$/i, "") || slug.replace(/-\d+$/, "").replace(/-/g, " ");
+      }
     }
 
     if (!soundUrl) return { content: [{ type: "text", text: "Provide slug, url, or query." }] };
+
+    // Update cache with play
+    const cache = loadCache();
+    const playSlug = slug || Object.values(cache.sounds).find(s => s.url === soundUrl)?.slug;
+    if (playSlug) {
+      cacheSound(cache, playSlug, name, soundUrl);
+      addRecent(cache, playSlug);
+      saveCache(cache);
+    }
 
     const [duration] = await Promise.all([
       getMp3Duration(soundUrl),
