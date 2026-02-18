@@ -260,7 +260,7 @@ server.tool(
 
 server.tool(
   "play_sound",
-  "Play a sound from myinstants.com.",
+  "Play a sound from myinstants.com. Returns the sound duration in seconds so you can plan around async playback.",
   {
     slug: z.string().optional().describe("Sound slug from search results"),
     url: z.string().optional().describe("Direct MP3 URL"),
@@ -290,8 +290,10 @@ server.tool(
       getMp3Duration(soundUrl),
       wait ? streamPlay(soundUrl) : Promise.resolve(enqueue(soundUrl)),
     ]);
-    const dur = duration ? ` (${duration}s)` : "";
-    return { content: [{ type: "text", text: `🔊 ${name}${dur}` }] };
+    const lines = [`🔊 ${name}`];
+    if (duration) lines.push(`Duration: ${duration}s`);
+    if (!wait && duration) lines.push(`Sound is playing in the background and will finish in ~${duration} seconds.`);
+    return { content: [{ type: "text", text: lines.join("\n") }] };
   }
 );
 
