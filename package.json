@@ -2,7 +2,7 @@
   "name": "myinstants-mcp",
   "version": "1.8.1",
   "type": "module",
-  "mcpName": "io.github.austenstone/myinstants-mcp",
+  "mcpName": "io.github.austenstone/myinstants",
   "description": "MCP server for myinstants.com — search and play millions of sound buttons",
   "bin": {
     "myinstants-mcp": "server.js"
