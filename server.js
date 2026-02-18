@@ -16,6 +16,8 @@ const UA = `myinstants-mcp/${pkg.version}`;
 const volume = Math.min(1, Math.max(0, parseFloat(process.env.MYINSTANTS_VOLUME || "0.5") || 0.5));
 const defaultWait = process.env.MYINSTANTS_WAIT === "true";
 const enableDetails = process.env.MYINSTANTS_DETAILS === "true";
+const audioDevice = process.env.MYINSTANTS_DEVICE || null;
+const forcedPlayer = process.env.MYINSTANTS_PLAYER || null;
 const BASE = "https://www.myinstants.com";
 
 function httpGet(url) {
@@ -148,23 +150,57 @@ async function playFile(filePath) {
   const vol = Math.round(volume * 100);
   const platform = osPlatform();
 
-  // ffplay: cross-platform, headless, supports volume
+  // If forced player is set, try it first
+  if (forcedPlayer) {
+    if (forcedPlayer === "ffplay" && which("ffplay")) {
+      const args = ["-nodisp", "-autoexit", "-volume", String(vol), "-loglevel", "quiet"];
+      if (audioDevice) args.push("-audio_device", audioDevice);
+      args.push(filePath);
+      const ok = await spawnPlayer("ffplay", args);
+      if (ok) return true;
+    } else if (forcedPlayer === "mpv" && which("mpv")) {
+      const args = ["--no-video", `--volume=${vol}`];
+      if (audioDevice) args.push(`--audio-device=${audioDevice}`);
+      args.push(filePath);
+      const ok = await spawnPlayer("mpv", args);
+      if (ok) return true;
+    } else if (forcedPlayer === "afplay" && platform === "darwin") {
+      // afplay doesn't support device selection
+      const ok = await spawnPlayer("afplay", ["-v", String(volume), filePath]);
+      if (ok) return true;
+    } else if (forcedPlayer === "paplay" && which("paplay")) {
+      const args = [];
+      if (audioDevice) args.push("--device=" + audioDevice);
+      args.push(filePath);
+      const ok = await spawnPlayer("paplay", args);
+      if (ok) return true;
+    }
+  }
+
+  // ffplay: cross-platform, headless, supports volume and device
   if (which("ffplay")) {
-    const ok = await spawnPlayer("ffplay", ["-nodisp", "-autoexit", "-volume", String(vol), "-loglevel", "quiet", filePath]);
+    const args = ["-nodisp", "-autoexit", "-volume", String(vol), "-loglevel", "quiet"];
+    if (audioDevice) args.push("-audio_device", audioDevice);
+    args.push(filePath);
+    const ok = await spawnPlayer("ffplay", args);
     if (ok) return true;
   }
   // mpv: cross-platform, headless
   if (which("mpv")) {
-    const ok = await spawnPlayer("mpv", ["--no-video", `--volume=${vol}`, filePath]);
+    const args = ["--no-video", `--volume=${vol}`];
+    if (audioDevice) args.push(`--audio-device=${audioDevice}`);
+    args.push(filePath);
+    const ok = await spawnPlayer("mpv", args);
     if (ok) return true;
   }
-  // macOS: afplay is built-in
-  if (platform === "darwin") {
+  // macOS: afplay is built-in (does NOT support device selection)
+  if (platform === "darwin" && !audioDevice) {
     const ok = await spawnPlayer("afplay", ["-v", String(volume), filePath]);
     if (ok) return true;
   }
   // Windows: PowerShell + WPF MediaPlayer (built-in, headless, supports MP3)
-  if (platform === "win32") {
+  // Note: PowerShell MediaPlayer does not support device selection
+  if (platform === "win32" && !audioDevice) {
     const safePath = filePath.replace(/'/g, "''");
     const cmd = `powershell -c "Add-Type -AssemblyName presentationCore; $p = New-Object system.windows.media.mediaplayer; $p.open('${safePath}'); $p.Volume = ${volume}; $p.Play(); Start-Sleep 1; Start-Sleep -s $p.NaturalDuration.TimeSpan.TotalSeconds; Exit;"`;
     const ok = await new Promise(resolve => {
@@ -174,11 +210,17 @@ async function playFile(filePath) {
   }
   // Linux: paplay (PulseAudio) or aplay (ALSA) — WAV only, but worth trying
   if (platform === "linux") {
-    for (const p of ["paplay", "aplay"]) {
-      if (which(p)) {
-        const ok = await spawnPlayer(p, [filePath]);
-        if (ok) return true;
-      }
+    if (which("paplay")) {
+      const args = [];
+      if (audioDevice) args.push("--device=" + audioDevice);
+      args.push(filePath);
+      const ok = await spawnPlayer("paplay", args);
+      if (ok) return true;
+    }
+    if (which("aplay") && !audioDevice) {
+      // aplay doesn't support device selection in a simple way
+      const ok = await spawnPlayer("aplay", [filePath]);
+      if (ok) return true;
     }
   }
   return false;
@@ -186,13 +228,37 @@ async function playFile(filePath) {
 
 async function streamPlay(url) {
   const vol = Math.round(volume * 100);
+  
+  // If forced player is set, try it first
+  if (forcedPlayer) {
+    if (forcedPlayer === "ffplay" && which("ffplay")) {
+      const args = ["-nodisp", "-autoexit", "-volume", String(vol), "-loglevel", "quiet"];
+      if (audioDevice) args.push("-audio_device", audioDevice);
+      args.push(url);
+      const ok = await spawnPlayer("ffplay", args);
+      if (ok) return true;
+    } else if (forcedPlayer === "mpv" && which("mpv")) {
+      const args = ["--no-video", `--volume=${vol}`];
+      if (audioDevice) args.push(`--audio-device=${audioDevice}`);
+      args.push(url);
+      const ok = await spawnPlayer("mpv", args);
+      if (ok) return true;
+    }
+  }
+  
   // ffplay and mpv can stream URLs directly (no download needed)
   if (which("ffplay")) {
-    const ok = await spawnPlayer("ffplay", ["-nodisp", "-autoexit", "-volume", String(vol), "-loglevel", "quiet", url]);
+    const args = ["-nodisp", "-autoexit", "-volume", String(vol), "-loglevel", "quiet"];
+    if (audioDevice) args.push("-audio_device", audioDevice);
+    args.push(url);
+    const ok = await spawnPlayer("ffplay", args);
     if (ok) return true;
   }
   if (which("mpv")) {
-    const ok = await spawnPlayer("mpv", ["--no-video", `--volume=${vol}`, url]);
+    const args = ["--no-video", `--volume=${vol}`];
+    if (audioDevice) args.push(`--audio-device=${audioDevice}`);
+    args.push(url);
+    const ok = await spawnPlayer("mpv", args);
     if (ok) return true;
   }
   // Everything else needs a local file
@@ -305,6 +371,109 @@ if (enableDetails) server.tool(
     if (audioUrl) lines.push(`URL: ${audioUrl}`);
     lines.push(`Page: ${BASE}/en/instant/${encodeURIComponent(targetSlug)}/`);
 
+    return { content: [{ type: "text", text: lines.join("\n") }] };
+  }
+);
+
+if (enableDetails) server.tool(
+  "list_devices",
+  "List available audio output devices on this system.",
+  {},
+  async () => {
+    const platform = osPlatform();
+    const lines = ["**Available Audio Devices**\n"];
+    
+    try {
+      if (platform === "darwin") {
+        // macOS - use ffmpeg to list devices
+        if (which("ffmpeg")) {
+          const output = await new Promise((resolve) => {
+            exec("ffmpeg -f avfoundation -list_devices true -i \"\" 2>&1", (err, stdout, stderr) => {
+              resolve(stderr + stdout);
+            });
+          });
+          lines.push("**macOS Audio Devices (ffmpeg/ffplay):**");
+          const devices = output.match(/\[AVFoundation.*?\] \[.*?\] (.*)/g);
+          if (devices && devices.length > 0) {
+            devices.forEach(d => {
+              const match = d.match(/\] (.*)/);
+              if (match) lines.push(`  - ${match[1]}`);
+            });
+          } else {
+            lines.push("  (Unable to detect devices)");
+          }
+          lines.push("\n**Note:** afplay does not support device selection. Use ffplay or mpv with MYINSTANTS_PLAYER.");
+        } else {
+          lines.push("**macOS:** Install ffmpeg to list devices: `brew install ffmpeg`");
+          lines.push("**Note:** afplay (default player) does not support device selection.");
+        }
+      } else if (platform === "linux") {
+        // Linux - use pactl for PulseAudio
+        if (which("pactl")) {
+          const output = await new Promise((resolve) => {
+            exec("pactl list short sinks 2>&1", (err, stdout) => {
+              resolve(stdout);
+            });
+          });
+          lines.push("**Linux Audio Devices (PulseAudio):**");
+          const devices = output.trim().split("\n").filter(l => l);
+          if (devices.length > 0) {
+            devices.forEach(d => {
+              const parts = d.split(/\s+/);
+              if (parts[1]) lines.push(`  - ${parts[1]}`);
+            });
+          } else {
+            lines.push("  (No PulseAudio sinks found)");
+          }
+        } else {
+          lines.push("**Linux:** Install PulseAudio utilities: `sudo apt install pulseaudio-utils`");
+        }
+        
+        // Also try mpv device listing
+        if (which("mpv")) {
+          const output = await new Promise((resolve) => {
+            exec("mpv --audio-device=help 2>&1", (err, stdout, stderr) => {
+              resolve(stdout + stderr);
+            });
+          });
+          lines.push("\n**mpv Audio Devices:**");
+          const deviceLines = output.split("\n").filter(l => l.trim().startsWith("'")).slice(0, 20);
+          if (deviceLines.length > 0) {
+            deviceLines.forEach(l => {
+              const match = l.match(/'([^']+)'/);
+              if (match) lines.push(`  - ${match[1]}`);
+            });
+          }
+        }
+      } else if (platform === "win32") {
+        lines.push("**Windows:** Device listing not implemented.");
+        lines.push("PowerShell MediaPlayer uses system default only.");
+        lines.push("Install ffmpeg or mpv for device selection support.");
+      }
+      
+      lines.push("\n**Discovery Commands:**");
+      lines.push("```bash");
+      if (platform === "darwin") {
+        lines.push("# macOS");
+        lines.push('ffmpeg -f avfoundation -list_devices true -i "" 2>&1');
+      } else if (platform === "linux") {
+        lines.push("# Linux - PulseAudio");
+        lines.push("pactl list short sinks");
+      }
+      lines.push("\n# mpv (cross-platform)");
+      lines.push("mpv --audio-device=help");
+      lines.push("```");
+      
+      lines.push("\n**Usage:**");
+      lines.push("Set MYINSTANTS_DEVICE to the device name:");
+      lines.push('```bash');
+      lines.push('export MYINSTANTS_DEVICE="device-name"');
+      lines.push('```');
+      
+    } catch (err) {
+      lines.push(`Error listing devices: ${err.message}`);
+    }
+    
     return { content: [{ type: "text", text: lines.join("\n") }] };
   }
 );
