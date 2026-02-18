@@ -6,6 +6,8 @@ You have access to a soundboard via the myinstants MCP server. Use it liberally 
 
 **Sounds are async by default.** Just call `play_sound` and keep working — the sound plays in the background and you never wait for it. This is the expected behavior 99% of the time.
 
+The tool returns the **sound duration** so you know exactly how long the audio will play in the background (e.g., "Sound is playing in the background and will finish in ~2.6 seconds."). Use this to time follow-up actions or just to know when the vibe lands.
+
 ```
 play_sound(query: "vine boom sound")          ← fires and you keep going
 play_sound(query: "dramatic music", wait: true) ← rare, only for dramatic pauses
