@@ -7,7 +7,7 @@ import { spawn, exec, execSync } from "child_process";
 import { createWriteStream, readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { platform as osPlatform, tmpdir } from "os";
+import { platform as osPlatform, tmpdir, homedir } from "os";
 import { get } from "https";
 
 const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "package.json"), "utf8"));
@@ -19,17 +19,25 @@ const enableDetails = process.env.MYINSTANTS_DETAILS === "true";
 const enableCache = process.env.MYINSTANTS_CACHE !== "false";
 const BASE = "https://www.myinstants.com";
 
-const home = process.env.HOME || process.env.USERPROFILE || "";
+const home = homedir();
 const cacheDir = process.env.MYINSTANTS_CACHE_DIR || join(home, ".cache", "myinstants");
 const cachePath = join(cacheDir, "cache.json");
 const MAX_RECENT = 50;
 
 if (enableCache && !existsSync(cacheDir)) mkdirSync(cacheDir, { recursive: true });
 
+const defaultCache = () => ({ sounds: {}, recent: [], favorites: [] });
+
 function loadCache() {
-  if (!enableCache) return { sounds: {}, recent: [], favorites: [] };
-  try { return JSON.parse(readFileSync(cachePath, "utf-8")); }
-  catch { return { sounds: {}, recent: [], favorites: [] }; }
+  if (!enableCache) return defaultCache();
+  try {
+    const parsed = JSON.parse(readFileSync(cachePath, "utf-8"));
+    return {
+      sounds: (parsed.sounds && typeof parsed.sounds === "object") ? parsed.sounds : {},
+      recent: Array.isArray(parsed.recent) ? parsed.recent : [],
+      favorites: Array.isArray(parsed.favorites) ? parsed.favorites : [],
+    };
+  } catch { return defaultCache(); }
 }
 
 function saveCache(cache) {
@@ -332,11 +340,12 @@ server.tool(
     remove: z.boolean().optional().default(false).describe("Set true to remove from favorites"),
   },
   async ({ slug, remove }) => {
-    const cache = loadCache();
+    let cache = loadCache();
     if (!cache.sounds[slug]) {
       const results = await search(slug.replace(/-/g, " "));
       const match = results.find(r => r.slug === slug);
       if (!match) return { content: [{ type: "text", text: `Sound "${slug}" not found` }] };
+      cache = loadCache(); // reload after search may have updated cache
     }
     toggleFavorite(cache, slug, remove);
     saveCache(cache);
@@ -431,7 +440,7 @@ server.tool(
 
     // Update cache with play
     const cache = loadCache();
-    const playSlug = slug || Object.values(cache.sounds).find(s => s.url === soundUrl)?.slug || name.replace(/\s+/g, "-");
+    const playSlug = slug || Object.values(cache.sounds).find(s => s.url === soundUrl)?.slug;
     if (playSlug) {
       cacheSound(cache, playSlug, name, soundUrl);
       addRecent(cache, playSlug);
