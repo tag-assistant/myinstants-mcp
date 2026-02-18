@@ -8,7 +8,7 @@ MCP server for [myinstants.com](https://www.myinstants.com) — search and play 
 npm install
 ```
 
-### Claude Desktop
+Add to your MCP client config:
 
 ```json
 {
@@ -25,15 +25,22 @@ npm install
 
 | MCP Feature | Purpose |
 |---|---|
-| **Tool: `search_sounds`** | Search myinstants.com, returns list of matches |
-| **Tool: `play_sound`** | Play by slug, URL, or quick search (plays first match) |
-| **Resource: `myinstants://trending`** | Currently trending sounds |
+| **Tool: `search_sounds`** | Search myinstants.com, returns matches with slugs |
+| **Tool: `play_sound`** | Play by slug, URL, or quick search (streams directly) |
+| **Resource: `myinstants://trending`** | Currently trending US sounds |
 
-Sounds are downloaded once and cached to `~/.cache/myinstants/`.
+Sounds stream directly via `ffplay` or `mpv` — no download step. Queued playback prevents overlap.
 
 ## Environment
 
 | Variable | Default | Description |
 |---|---|---|
 | `MYINSTANTS_VOLUME` | `0.5` | Playback volume (0-1) |
-| `MYINSTANTS_CACHE` | `~/.cache/myinstants` | Download cache directory |
+
+## Requirements
+
+One of: `ffplay` (via ffmpeg) or `mpv` for streaming playback.
+```bash
+brew install ffmpeg  # macOS
+sudo apt install ffmpeg  # Linux
+```
