@@ -10,7 +10,7 @@ import { platform as osPlatform, tmpdir } from "os";
 import { get } from "https";
 
 const volume = Math.min(1, Math.max(0, parseFloat(process.env.MYINSTANTS_VOLUME || "0.5") || 0.5));
-const defaultWait = process.env.MYINSTANTS_WAIT !== undefined ? process.env.MYINSTANTS_WAIT !== "false" : true;
+const defaultWait = process.env.MYINSTANTS_WAIT === "true";
 const enableDetails = process.env.MYINSTANTS_DETAILS === "true";
 const BASE = "https://www.myinstants.com";
 
@@ -312,7 +312,7 @@ server.tool(
     slug: z.string().optional().describe("Sound slug from search results"),
     url: z.string().optional().describe("Direct MP3 URL"),
     query: z.string().optional().describe("Quick search — plays first result"),
-    wait: z.boolean().optional().default(defaultWait).describe(`Wait for sound to finish before returning (default: ${defaultWait}). Set false for background playback.`),
+    wait: z.boolean().optional().default(defaultWait).describe(`Wait for sound to finish before returning (default: ${defaultWait}). Set true only for dramatic moments where timing matters.`),
   },
   async ({ slug, url, query, wait }) => {
     let soundUrl = url;
