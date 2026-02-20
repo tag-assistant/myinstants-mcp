@@ -98,6 +98,10 @@ Add to your VS Code MCP config (User or `.vscode/mcp.json`):
 | `search_sounds` | search myinstants for sounds | `"bruh"` → 20 results with slugs |
 | `browse_category` | browse by category | `"memes"` `"games"` `"reactions"` |
 | `play_sound` | play a sound (by slug, url, or quick search) | `{ query: "sad trombone" }` plays instantly |
+| `get_sound_details`* | get details about a sound (views, uploader, duration) | requires `MYINSTANTS_DETAILS=true` |
+| `list_devices`* | list available audio output devices | requires `MYINSTANTS_DETAILS=true` |
+
+<sub>* requires `MYINSTANTS_DETAILS=true` environment variable</sub>
 
 #### `play_sound` options
 
@@ -156,6 +160,9 @@ check our [copilot-instructions.md](.github/copilot-instructions.md) for the ful
 |----------|---------|------|
 | `MYINSTANTS_VOLUME` | `0.5` | how loud (0-1). crank it bestie. |
 | `MYINSTANTS_WAIT` | `false` | `"true"` = sounds block until finished. dramatic effect mode 🎭 |
+| `MYINSTANTS_DEVICE` | (system default) | route audio to a specific output device. platform-specific device name. |
+| `MYINSTANTS_PLAYER` | (auto) | force a specific player: `ffplay`, `mpv`, `afplay`, or `paplay`. |
+| `MYINSTANTS_DETAILS` | `false` | `"true"` = enables `get_sound_details` and `list_devices` tools. |
 
 ```json
 {
@@ -164,12 +171,59 @@ check our [copilot-instructions.md](.github/copilot-instructions.md) for the ful
       "command": "npx",
       "args": ["-y", "myinstants-mcp@latest"],
       "env": {
-        "MYINSTANTS_VOLUME": "0.8"
+        "MYINSTANTS_VOLUME": "0.8",
+        "MYINSTANTS_DEVICE": "Denon AVR-S760H",
+        "MYINSTANTS_DETAILS": "true"
       }
     }
   }
 }
 ```
+
+### audio device selection
+
+route sounds to a specific output device instead of system default:
+
+```bash
+# set device name (platform-specific)
+export MYINSTANTS_DEVICE="Denon AVR-S760H"
+
+# force a specific player (optional)
+export MYINSTANTS_PLAYER="ffplay"
+
+# enable device listing tool
+export MYINSTANTS_DETAILS="true"
+```
+
+**discover available devices:**
+
+```bash
+# macOS
+ffmpeg -f avfoundation -list_devices true -i "" 2>&1
+
+# Linux (PulseAudio)
+pactl list short sinks
+
+# mpv (cross-platform)
+mpv --audio-device=help
+```
+
+or use the `list_devices` tool when `MYINSTANTS_DETAILS=true` — your agent can discover devices for you. 💅
+
+**player support:**
+
+| Player | Device Flag | Example |
+|--------|------------|---------|
+| `ffplay` | `-audio_device` | `ffplay -audio_device "Denon AVR-S760H"` |
+| `mpv` | `--audio-device=` | `mpv --audio-device="pulse/alsa_output.usb"` |
+| `paplay` | `--device=` | `paplay --device=bluez_sink.XX` |
+| `afplay` | ❌ N/A | macOS system default only (no device selection) |
+
+**notes:**
+- default behavior unchanged — uses system default output if `MYINSTANTS_DEVICE` not set
+- afplay on macOS doesn't support device selection — set `MYINSTANTS_PLAYER=ffplay` or `mpv` if you need device control
+- device names are platform-specific (see discovery commands above)
+- Windows PowerShell player doesn't support device selection — install ffmpeg or mpv for device support
 
 ### audio player support
 
